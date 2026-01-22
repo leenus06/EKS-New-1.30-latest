@@ -34,11 +34,11 @@ module "vpc" {
   enable_dns_support   = true
   enable_dns_hostnames = true
 
-  # K8s subnet tags for LB/Ingress discovery
   public_subnet_tags = {
     "kubernetes.io/role/elb"                    = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   }
+
   private_subnet_tags = {
     "kubernetes.io/role/internal-elb"           = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
@@ -47,7 +47,7 @@ module "vpc" {
   tags = var.tags
 }
 
-# ---------------- EKS (IRSA ON) ----------------
+# ---------------- EKS ----------------
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.37"
@@ -62,28 +62,31 @@ module "eks" {
   cluster_endpoint_public_access           = true
 
   cluster_addons = {
-    coredns   = {}
+    coredns    = {}
     kube-proxy = {}
-    vpc-cni   = {}
+    vpc-cni    = {}
   }
 
   eks_managed_node_groups = {
     workers = {
-      instance_types = var.node_types
-      desired_size   = var.node_desired
-      min_size       = var.node_min
-      max_size       = var.node_max
-      disk_size      = var.node_disk_gib
-      labels         = { role = "worker" }
-      tags           = var.tags
-      # capacity_type = "SPOT"
+      instance_types = ["c7i-flex.large"]
+      key_name       = "Lee_key"
+
+      desired_size = 1
+      min_size     = 1
+      max_size     = 2
+
+      disk_size = 20
+      labels    = { role = "worker" }
+
+      tags = var.tags
     }
   }
 
   tags = var.tags
 }
 
-# ---------------- IRSA role for EBS CSI ----------------
+# ---------------- IRSA for EBS CSI ----------------
 data "aws_iam_policy" "ebs_csi" {
   arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
@@ -123,14 +126,11 @@ resource "aws_iam_role_policy_attachment" "ebs_csi_attach" {
   policy_arn = data.aws_iam_policy.ebs_csi.arn
 }
 
-# ---------------- AWS-managed EBS CSI add-on ----------------
 resource "aws_eks_addon" "ebs_csi" {
   cluster_name             = module.eks.cluster_name
   addon_name               = "aws-ebs-csi-driver"
-  # addon_version          = "v1.30.x-eksbuild.y"
   service_account_role_arn = aws_iam_role.ebs_csi.arn
 
-  # New conflict flags
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 
@@ -142,14 +142,12 @@ resource "aws_eks_addon" "ebs_csi" {
   ]
 }
 
-# ---------------- Kubernetes auth (NO cluster data read) ----------------
-# Only fetch the token after the cluster is created
+# ---------------- Kubernetes Provider ----------------
 data "aws_eks_cluster_auth" "this" {
   name       = module.eks.cluster_name
   depends_on = [module.eks]
 }
 
-# Configure provider using module outputs (endpoint/CA) + token
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
@@ -164,9 +162,11 @@ resource "kubernetes_storage_class_v1" "gp3_default" {
       "storageclass.kubernetes.io/is-default-class" = "true"
     }
   }
+
   storage_provisioner    = "ebs.csi.aws.com"
   volume_binding_mode    = "WaitForFirstConsumer"
   allow_volume_expansion = true
+
   parameters = {
     type   = "gp3"
     fsType = "ext4"
@@ -174,4 +174,3 @@ resource "kubernetes_storage_class_v1" "gp3_default" {
 
   depends_on = [aws_eks_addon.ebs_csi]
 }
-
