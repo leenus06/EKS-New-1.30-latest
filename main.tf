@@ -40,7 +40,7 @@ module "vpc" {
   public_subnets  = local.public_subnets
   private_subnets = local.private_subnets
 
-  enable_nat_gateway = false
+  enable_nat_gateway   = false
   enable_dns_support   = true
   enable_dns_hostnames = true
 
@@ -63,9 +63,11 @@ module "eks" {
   cluster_name    = var.cluster_name
   cluster_version = var.kubernetes_version
 
-  # 🔴 REQUIRED (prevents your errors)
+  # 🔒 HARD DISABLES (CRITICAL FIX)
   create_kms_key              = false
   create_cloudwatch_log_group = false
+  cluster_encryption_config   = null
+  cluster_enabled_log_types   = []
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
@@ -82,7 +84,7 @@ module "eks" {
 
   eks_managed_node_groups = {
     workers = {
-      instance_types = ["t3.micro"] # free-tier safe
+      instance_types = ["t3.micro"]
       desired_size   = 1
       min_size       = 1
       max_size       = 1
@@ -139,7 +141,7 @@ resource "aws_eks_addon" "ebs_csi" {
   depends_on = [aws_iam_role_policy_attachment.ebs_csi_attach]
 }
 
-# ---------------- Kubernetes Provider (CORRECT) ----------------
+# ---------------- Kubernetes Provider ----------------
 data "aws_eks_cluster" "this" {
   name = module.eks.cluster_name
 }
