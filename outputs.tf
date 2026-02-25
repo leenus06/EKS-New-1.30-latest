@@ -3,7 +3,7 @@ variable "region" {
 }
 
 variable "cluster_name" {
-  default = "devopsshack-cluster"
+  default = "devopsshack-cluster-v2"
 }
 
 variable "kubernetes_version" {
