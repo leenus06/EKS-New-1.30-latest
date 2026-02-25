@@ -1,23 +1,26 @@
-output "region" {
-  value = var.region
+variable "region" {
+  default = "ap-south-1"
 }
 
-output "cluster_name" {
-  value = module.eks.cluster_name
+variable "cluster_name" {
+  default = "devopsshack-cluster"
 }
 
-output "cluster_endpoint" {
-  value = module.eks.cluster_endpoint
+variable "kubernetes_version" {
+  default = "1.30"
 }
 
-output "vpc_id" {
-  value = module.vpc.vpc_id
+variable "vpc_cidr" {
+  default = "10.0.0.0/16"
 }
 
-output "private_subnets" {
-  value = module.vpc.private_subnets
+variable "az_count" {
+  default = 2
 }
 
-output "kubeconfig_cmd" {
-  value = "aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.region}"
+variable "tags" {
+  default = {
+    Project   = "DevOpsShack"
+    ManagedBy = "Terraform"
+  }
 }
