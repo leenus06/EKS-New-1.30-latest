@@ -1,26 +1,29 @@
-variable "region" {
-  default = "ap-south-1"
+output "region" {
+  value       = var.region
+  description = "AWS region"
 }
 
-variable "cluster_name" {
-  default = "devopsshack-cluster-v2"
+output "cluster_name" {
+  value       = module.eks.cluster_name
+  description = "EKS cluster name"
 }
 
-variable "kubernetes_version" {
-  default = "1.30"
+output "cluster_endpoint" {
+  value       = module.eks.cluster_endpoint
+  description = "EKS API server endpoint"
 }
 
-variable "vpc_cidr" {
-  default = "10.0.0.0/16"
+output "vpc_id" {
+  value       = module.vpc.vpc_id
+  description = "VPC ID"
 }
 
-variable "az_count" {
-  default = 2
+output "private_subnets" {
+  value       = module.vpc.private_subnets
+  description = "Private subnet IDs"
 }
 
-variable "tags" {
-  default = {
-    Project   = "DevOpsShack"
-    ManagedBy = "Terraform"
-  }
+output "kubeconfig_cmd" {
+  value       = "aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.region}"
+  description = "Command to configure kubectl for this cluster"
 }
