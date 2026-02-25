@@ -63,10 +63,10 @@ module "eks" {
   cluster_name    = var.cluster_name
   cluster_version = var.kubernetes_version
 
-  # 🔒 HARD DISABLES (CRITICAL FIX)
+  # 🔒 HARD DISABLES (CRITICAL)
   create_kms_key              = false
   create_cloudwatch_log_group = false
-  cluster_encryption_config   = null
+  cluster_encryption_config   = []   # ✅ MUST be empty list (not null)
   cluster_enabled_log_types   = []
 
   vpc_id     = module.vpc.vpc_id
