@@ -1,20 +1,31 @@
 terraform {
   required_version = ">= 1.6.0"
+
   required_providers {
-    aws = { source = "hashicorp/aws", version = "~> 5.0" }
-    kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.29" }
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.29"
+    }
   }
 }
 
-provider "aws" { region = var.region }
+provider "aws" {
+  region = var.region
+}
 
-# ---------------- AZs & Subnets ----------------
-data "aws_availability_zones" "available" { state = "available" }
+# ---------------- AZs ----------------
+data "aws_availability_zones" "available" {
+  state = "available"
+}
 
 locals {
   azs             = slice(data.aws_availability_zones.available.names, 0, var.az_count)
-  public_subnets  = [for i, _ in local.azs : cidrsubnet(var.vpc_cidr, 4, i)]
-  private_subnets = [for i, _ in local.azs : cidrsubnet(var.vpc_cidr, 4, i + 8)]
+  public_subnets  = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 4, i)]
+  private_subnets = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 4, i + 8)]
 }
 
 # ---------------- VPC ----------------
@@ -29,19 +40,16 @@ module "vpc" {
   public_subnets  = local.public_subnets
   private_subnets = local.private_subnets
 
-  enable_nat_gateway = true
-  single_nat_gateway = true
+  enable_nat_gateway = false
   enable_dns_support   = true
   enable_dns_hostnames = true
 
   public_subnet_tags = {
-    "kubernetes.io/role/elb"                    = "1"
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/role/elb" = "1"
   }
 
   private_subnet_tags = {
-    "kubernetes.io/role/internal-elb"           = "1"
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+    "kubernetes.io/role/internal-elb" = "1"
   }
 
   tags = var.tags
@@ -52,10 +60,15 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.37"
 
-  cluster_name        = var.cluster_name
-  cluster_version     = var.kubernetes_version
-  vpc_id              = module.vpc.vpc_id
-  subnet_ids          = module.vpc.private_subnets
+  cluster_name    = var.cluster_name
+  cluster_version = var.kubernetes_version
+
+  # 🔴 REQUIRED (prevents your errors)
+  create_kms_key              = false
+  create_cloudwatch_log_group = false
+
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
 
   enable_irsa                              = true
   enable_cluster_creator_admin_permissions = true
@@ -69,17 +82,12 @@ module "eks" {
 
   eks_managed_node_groups = {
     workers = {
-      instance_types = ["c7i-flex.large"]
-      key_name       = "Lee_key"
-
-      desired_size = 1
-      min_size     = 1
-      max_size     = 2
-
-      disk_size = 20
-      labels    = { role = "worker" }
-
-      tags = var.tags
+      instance_types = ["t3.micro"] # free-tier safe
+      desired_size   = 1
+      min_size       = 1
+      max_size       = 1
+      disk_size      = 20
+      tags           = var.tags
     }
   }
 
@@ -99,12 +107,6 @@ data "aws_iam_policy_document" "ebs_csi_assume" {
     principals {
       type        = "Federated"
       identifiers = [module.eks.oidc_provider_arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "${replace(module.eks.oidc_provider, "https://", "")}:aud"
-      values   = ["sts.amazonaws.com"]
     }
 
     condition {
@@ -134,24 +136,24 @@ resource "aws_eks_addon" "ebs_csi" {
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 
-  tags = var.tags
-
-  depends_on = [
-    aws_iam_role_policy_attachment.ebs_csi_attach,
-    module.eks
-  ]
+  depends_on = [aws_iam_role_policy_attachment.ebs_csi_attach]
 }
 
-# ---------------- Kubernetes Provider ----------------
+# ---------------- Kubernetes Provider (CORRECT) ----------------
+data "aws_eks_cluster" "this" {
+  name = module.eks.cluster_name
+}
+
 data "aws_eks_cluster_auth" "this" {
-  name       = module.eks.cluster_name
-  depends_on = [module.eks]
+  name = module.eks.cluster_name
 }
 
 provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-  token                  = data.aws_eks_cluster_auth.this.token
+  host                   = data.aws_eks_cluster.this.endpoint
+  cluster_ca_certificate = base64decode(
+    data.aws_eks_cluster.this.certificate_authority[0].data
+  )
+  token = data.aws_eks_cluster_auth.this.token
 }
 
 # ---------------- Default gp3 StorageClass ----------------
